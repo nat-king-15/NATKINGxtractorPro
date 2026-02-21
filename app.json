@@ -1,42 +1,51 @@
 {
-  "name": "𝖤𝖣𝖴𝖢𝖠𝖳𝖨𝖮𝖭 𝖧𝖴𝖡",
+  "name": "NATKINGxtractorPro",
   "description": "Telegram Bot using Pyrogram",
-  "repository": "https://github.com/DAXXTEAM",
+  "repository": "https://github.com/nat-king-15/NATKINGxtractorPro",
   "env": {
     "API_ID": {
-      "description": "16253557",
+      "description": "Get your telegram API ID from https://my.telegram.org",
+      "value": "6886135",
       "required": true
     },
     "API_HASH": {
-      "description": "81171c25e4cb9062cb10da8b7730432a",
+      "description": "Get your telegram API HASH from https://my.telegram.org",
+      "value": "ee20a1c8a8e44eaa638b7254cbcc3012",
       "required": true
     },
     "BOT_TOKEN": {
-      "description": "7183102042:AAEnVz9WmroQNCl6luhjTJtJ_CrDKiU7Zog",
+      "description": "Get from BotFather",
+      "value": "8525803667:AAEjpylk_qaZ62O_gIZmch46S8VQNYxcY1M",
       "required": true
     },
     "BOT_USERNAME": {
-      "description": "DILDAAREXTRACTORBOT",
+      "description": "Bot username from BotFather",
+      "value": "@Natking_uploader_bot",
       "required": true
     },
     "OWNER_ID": {
-      "description": "1996039956",
+      "description": "Owner Telegram ID",
+      "value": "2118600611",
       "required": true
     },
     "SUDO_USERS": {
       "description": "Comma-separated list of sudo users' IDs",
+      "value": "2118600611",
       "required": false
     },
     "CHANNEL_ID": {
-      "description": "-1002233460126",
+      "description": "Channel ID for logs",
+      "value": "-1003744110162",
       "required": true
     },
     "MONGO_URL": {
-      "description": "mongodb+srv://MRDAXX:MRDAXX@mrdaxx.prky3aj.mongodb.net/?retryWrites=true&w=majority",
+      "description": "MongoDB connection string",
+      "value": "mongodb+srv://nattu:nattu@cluster0.quvds.mongodb.net/?appName=Cluster0",
       "required": true
     },
     "PREMIUM_LOGS": {
-      "description": "1",
+      "description": "Premium logs channel ID",
+      "value": "-1003744110162",
       "required": true
     }
   },
