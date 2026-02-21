@@ -37,16 +37,51 @@ def decode_base64(encoded_str):
         return decoded_str
     except Exception as e:
         return f"Error decoding string: {e}"
+async def fetch_appx_html_to_json(session, url, headers=None, data=None):
+    try:
+        if data:
+            async with session.post(url, headers=headers, data=data) as response:
+                text = await response.text()
+        else:
+            async with session.get(url, headers=headers) as response:
+                text = await response.text()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r'\{"status":', text, re.DOTALL)
+            if match:
+                json_str = text[match.start():]
+                try:
+                    open_brace_count = 0
+                    close_brace_count = 0
+                    json_end = -1
+                    for i, char in enumerate(json_str):
+                        if char == '{':
+                            open_brace_count += 1
+                        elif char == '}':
+                            close_brace_count += 1
+                        if open_brace_count > 0 and open_brace_count == close_brace_count:
+                            json_end = i + 1
+                            break
+                    if json_end != -1:
+                        return json.loads(json_str[:json_end])
+                    else:
+                        print(f"Could not find matching closing brace }} in {url}")
+                        return {}
+                except json.JSONDecodeError:
+                    print(f"Could not parse JSON from the end in {url}")
+                    return {}
+            else:
+                print(f"Could not find JSON at the end for {url}")
+                return {}
+    except Exception as e:
+        print(f"An error occurred during fetch_appx_html_to_json: {e}")
+        return {}
+
 async def fetch(session, url, headers):
     try:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                print(f"Error fetching {url}: {response.status}")
-                return {}
-            content = await response.text()
-            
-            soup = BeautifulSoup(content, 'html.parser')
-            return json.loads(str(soup))
+        j = await fetch_appx_html_to_json(session, url, headers)
+        return j or {}
     except Exception as e:
         print(f"An error occurred while fetching {url}: {str(e)}")
         return {}
@@ -253,21 +288,42 @@ async def appex_v3_txt(app, message, api, name):
         
     scraper = cloudscraper.create_scraper() 
     try:
-        mc1 = scraper.get(f"{api_base}/get/mycoursev2?userid={userid}", headers=hdr1).json()
-        
-        
-        
+        mc1 = scraper.get(f"{api_base}/get/mycoursev2?userid={userid}", headers=hdr1)
+        # Using the same regex strategy from fetch_appx_html_to_json if straight json loads fails
+        try:
+            mc1_json = mc1.json()
+        except json.JSONDecodeError:
+            text = mc1.text
+            match = re.search(r'\{"status":', text, re.DOTALL)
+            if match:
+                json_str = text[match.start():]
+                open_brace_count = 0
+                close_brace_count = 0
+                json_end = -1
+                for i, char in enumerate(json_str):
+                    if char == '{': open_brace_count += 1
+                    elif char == '}': close_brace_count += 1
+                    if open_brace_count > 0 and open_brace_count == close_brace_count:
+                        json_end = i + 1; break
+                if json_end != -1:
+                    mc1_json = json.loads(json_str[:json_end])
+                else:
+                    raise Exception("Could not find matching brace")
+            else:
+                raise Exception("JSON payload not found in HTML response")
+
     except json.JSONDecodeError as e:
         print(f"JSON decode error: {str(e)}")
-        return await message.reply_text("Error decoding response from server. Please try again later.{e}")
+        return await message.reply_text("Error decoding response from server. Please try again later.")
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-        return await message.reply_text("An error occurred while fetching your courses. Please try again later.{e}")
+        return await message.reply_text(f"An error occurred while fetching your courses. Please try again later. {e}")
+    
     FFF = "𝗕𝗔𝗧𝗖𝗛 𝗜𝗗 ➤ 𝗕𝗔𝗧𝗖𝗛 𝗡𝗔𝗠𝗘\n\n"
     valid_ids = []
 
-    if "data" in mc1 and mc1["data"]:
-        for ct in mc1["data"]:
+    if "data" in mc1_json and mc1_json["data"]:
+        for ct in mc1_json["data"]:
             ci = ct.get("id")
             cn = ct.get("course_name")
             cp = ct.get("course_thumbnail")
@@ -278,8 +334,11 @@ async def appex_v3_txt(app, message, api, name):
             valid_ids.append(ci)
     else:
         try:
-            async with session.get(f"{api_base}/get/mycoursev2?userid={userid}", headers=hdr1) as res1:
-                j1 = await res1.json()
+            async with aiohttp.ClientSession() as session:
+                j1 = await fetch_appx_html_to_json(session, f"{api_base}/get/mycoursev2?userid={userid}", hdr1)
+                
+                if not j1:
+                    return await message.reply_text("Failed to securely fetch course lists. Try again.")
 
                 FFF = "COURSE-ID  -  COURSE NAME\n\n"
                 

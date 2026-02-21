@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import json
+import re
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64decode
@@ -31,61 +32,100 @@ def decode_base64(encoded_str):
     except Exception as e:
         return f"Error decoding string: {e}"
 
+async def fetch_appx_html_to_json(session, url, headers=None, data=None):
+    try:
+        if data:
+            async with session.post(url, headers=headers, data=data) as response:
+                text = await response.text()
+        else:
+            async with session.get(url, headers=headers) as response:
+                text = await response.text()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r'\{"status":', text, re.DOTALL)
+            if match:
+                json_str = text[match.start():]
+                try:
+                    open_brace_count = 0
+                    close_brace_count = 0
+                    json_end = -1
+                    for i, char in enumerate(json_str):
+                        if char == '{':
+                            open_brace_count += 1
+                        elif char == '}':
+                            close_brace_count += 1
+                        if open_brace_count > 0 and open_brace_count == close_brace_count:
+                            json_end = i + 1
+                            break
+                    if json_end != -1:
+                        return json.loads(json_str[:json_end])
+                    else:
+                        print(f"Could not find matching closing brace }} in {url}")
+                        return None
+                except json.JSONDecodeError:
+                    print(f"Could not parse JSON from the end in {url}")
+                    return None
+            else:
+                print(f"Could not find JSON at the end for {url}")
+                return None
+    except Exception as e:
+        print(f"An error occurred during fetch_appx_html_to_json: {e}")
+        return None
+
 async def fetch_item_details(session, api_base, course_id, item, headers):
     fi = item.get("id")
     vt = item.get("Title", "")
     outputs = []  
 
     try:
-        async with session.get(f"{api_base}/get/fetchVideoDetailsById?course_id={course_id}&folder_wise_course=1&ytflag=0&video_id={fi}", headers=headers) as response:
-            if response.headers.get('Content-Type', '').startswith('application/json'):
-                r4 = await response.json()
-                data = r4.get("data")
-                if not data:
-                    return []
-
-                vt = data.get("Title", "")
-                vl = data.get("download_link", "")
-
-                if vl:
-                    dvl = decrypt(vl)
-                    outputs.append(f"{vt}:{dvl}")
-                else:
-                    encrypted_links = data.get("encrypted_links", [])
-                    for link in encrypted_links:
-                        a = link.get("path")
-                        k = link.get("key")
-
-                        if a and k:
-                            k1 = decrypt(k)
-                            k2 = decode_base64(k1)
-                            da = decrypt(a)
-                            outputs.append(f"{vt}:{da}*{k2}")
-                            break
-                        elif a:
-                            da = decrypt(a)
-                            outputs.append(f"{vt}:{da}")
-                            break
-
-                if "material_type" in data:
-                    mt = data["material_type"]
-                    if mt == "VIDEO":
-                        p1 = data.get("pdf_link", "")
-                        pk1 = data.get("pdf_encryption_key", "")
-                        p2 = data.get("pdf_link2", "")
-                        pk2 = data.get("pdf2_encryption_key", "")
-                        if p1:
-                            dp1 = decrypt(p1)
-                            depk1 = decrypt(pk1)
-                            outputs.append(f"{vt}:{dp1}*{depk1}")
-                        if p2:
-                            dp2 = decrypt(p2)
-                            depk2 = decrypt(pk2)
-                            outputs.append(f"{vt}:{dp2}*{depk2}")
-            else:
-                error_page = await response.text()
-                print(f"Error: Unexpected response for video ID {fi}:\n{error_page}")
+        r4 = await fetch_appx_html_to_json(session, f"{api_base}/get/fetchVideoDetailsById?course_id={course_id}&folder_wise_course=1&ytflag=0&video_id={fi}", headers)
+        if r4:
+            data = r4.get("data")
+            if not data:
                 return []
+
+            vt = data.get("Title", "")
+            vl = data.get("download_link", "")
+
+            if vl:
+                dvl = decrypt(vl)
+                outputs.append(f"{vt}:{dvl}")
+            else:
+                encrypted_links = data.get("encrypted_links", [])
+                for link in encrypted_links:
+                    a = link.get("path")
+                    k = link.get("key")
+
+                    if a and k:
+                        k1 = decrypt(k)
+                        k2 = decode_base64(k1)
+                        da = decrypt(a)
+                        outputs.append(f"{vt}:{da}*{k2}")
+                        break
+                    elif a:
+                        da = decrypt(a)
+                        outputs.append(f"{vt}:{da}")
+                        break
+
+            if "material_type" in data:
+                mt = data["material_type"]
+                if mt == "VIDEO":
+                    p1 = data.get("pdf_link", "")
+                    pk1 = data.get("pdf_encryption_key", "")
+                    p2 = data.get("pdf_link2", "")
+                    pk2 = data.get("pdf2_encryption_key", "")
+                    if p1:
+                        dp1 = decrypt(p1)
+                        depk1 = decrypt(pk1)
+                        outputs.append(f"{vt}:{dp1}*{depk1}")
+                    if p2:
+                        dp2 = decrypt(p2)
+                        depk2 = decrypt(pk2)
+                        outputs.append(f"{vt}:{dp2}*{depk2}")
+        else:
+            print(f"Error: Unexpected response for video ID {fi}")
+            return []
     except Exception as e:
         print(f"An error occurred while fetching details for video ID {fi}: {str(e)}")
         return []
@@ -98,8 +138,8 @@ async def fetch_folder_contents(session, api_base, course_id, folder_id, headers
     outputs = []  
 
     try:
-        async with session.get(f"{api_base}/get/folder_contentsv2?course_id={course_id}&parent_id={folder_id}", headers=headers) as response:
-            j = await response.json()
+        j = await fetch_appx_html_to_json(session, f"{api_base}/get/folder_contentsv2?course_id={course_id}&parent_id={folder_id}", headers)
+        if j:
             tasks = []
             if "data" in j:
                 for item in j["data"]:
