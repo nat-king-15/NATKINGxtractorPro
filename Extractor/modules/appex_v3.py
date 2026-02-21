@@ -107,7 +107,7 @@ def transform_to_vercel_url(extracted_url, api_base, course_id, subject_id, topi
         
     return vercel_url
 
-async def handle_course(session, api_base, bi, si, sn, topic, hdr1):
+async def handle_course(session, api_base, bi, si, sn, topic, hdr1, course_name=""):
     ti = topic.get("topicid")
     tn = topic.get("topic_name")
     
@@ -116,15 +116,18 @@ async def handle_course(session, api_base, bi, si, sn, topic, hdr1):
     video_data = sorted(r3.get("data", []), key=lambda x: x.get("id"))  
 
     
-    tasks = [process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1) for video in video_data]
+    tasks = [process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name) for video in video_data]
     results = await asyncio.gather(*tasks)
     
     return [line for lines in results if lines for line in lines]
 
-async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
+async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name=""):
     vi = video.get("id")
     vn = video.get("Title")
     lines = []
+    
+    # Construct breadcrumb string if course_name is provided
+    breadcrumb = f"[Home >> {course_name} >> {sn} >> {tn}] " if course_name else ""
     
     try:
         r4 = await fetch(session, f"{api_base}/get/fetchVideoDetailsById?course_id={bi}&video_id={vi}&ytflag=0&folder_wise_course=0", hdr1)
@@ -142,13 +145,13 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
         if fl:
             dfl = decrypt(fl)
             final_link = f"https://youtu.be/{dfl}"
-            lines.append(f"{vt}:{final_link}\n")
+            lines.append(f"{breadcrumb}{vt} : {final_link}\n")
 
         if vl:
             dvl = decrypt(vl)
             if ".pdf" not in dvl: 
                 v_url = transform_to_vercel_url(dvl, api_base, bi, si, ti, token)
-                lines.append(f"{vt}:{v_url}\n")
+                lines.append(f"{breadcrumb}{vt} : {v_url}\n")
                  
         else:
             encrypted_links = r4.get("data", {}).get("encrypted_links", [])
@@ -162,11 +165,11 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                     k2 = decode_base64(k1)
                     v_url = transform_to_vercel_url(da, api_base, bi, si, ti, token)
                     # For Vercel links, user doesn't need to append the key, but I'll leave the key format string strictly as requested by Vercel params if needed. The test links didn't have the key at the end, but they are fully signed. 
-                    lines.append(f"{vt}:{v_url}*{k2}\n")
+                    lines.append(f"{breadcrumb}{vt} : {v_url}*{k2}\n")
                 elif a:
                     da = decrypt(a)
                     v_url = transform_to_vercel_url(da, api_base, bi, si, ti, token)
-                    lines.append(f"{vt}:{v_url}\n")
+                    lines.append(f"{breadcrumb}{vt} : {v_url}\n")
         
         if "material_type" in r4.get("data", {}):
             mt = r4["data"]["material_type"]
@@ -181,17 +184,17 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                     depk1 = decrypt(pk1)
                     v_url = transform_to_vercel_url(dp1, api_base, bi, si, ti, token)
                     if depk1 == "abcdefg":
-                        lines.append(f"{vt}:{v_url}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}\n")
                     else:
-                        lines.append(f"{vt}:{v_url}*{depk1}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}*{depk1}\n")
                 if p2 and pk2:
                     dp2 = decrypt(p2)
                     depk2 = decrypt(pk2)
                     v_url = transform_to_vercel_url(dp2, api_base, bi, si, ti, token)
                     if depk2 == "abcdefg":
-                        lines.append(f"{vt}:{v_url}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}\n")
                     else:
-                        lines.append(f"{vt}:{v_url}*{depk2}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}*{depk2}\n")
 
         
         if "material_type" in r4.get("data", {}):
@@ -207,17 +210,17 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                     depk1 = decrypt(pk1)
                     v_url = transform_to_vercel_url(dp1, api_base, bi, si, ti, token)
                     if depk1 == "abcdefg":
-                        lines.append(f"{vt}:{v_url}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}\n")
                     else:
-                        lines.append(f"{vt}:{v_url}*{depk1}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}*{depk1}\n")
                 if p2 and pk2:
                     dp2 = decrypt(p2)
                     depk2 = decrypt(pk2)
                     v_url = transform_to_vercel_url(dp2, api_base, bi, si, ti, token)
                     if depk2 == "abcdefg":
-                        lines.append(f"{vt}:{v_url}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}\n")
                     else:
-                        lines.append(f"{vt}:{v_url}*{depk2}\n")
+                        lines.append(f"{breadcrumb}{vt} : {v_url}*{depk2}\n")
                         
         return lines
     
@@ -476,7 +479,7 @@ async def appex_v3_txt(app, message, api, name):
                             r2 = await fetch(session, f"{api_base}/get/alltopicfrmlivecourseclass?courseid={raw_text2}&subjectid={si}&start=-1", hdr1)
                             topics = sorted(r2.get("data", []), key=lambda x: x.get("topicid"))
 
-                            tasks = [handle_course(session, api_base, raw_text2, si, sn, t, hdr1) for t in topics]
+                            tasks = [handle_course(session, api_base, raw_text2, si, sn, t, hdr1, txtn) for t in topics]
                             all_data = await asyncio.gather(*tasks)
                 
                             for data in all_data:
