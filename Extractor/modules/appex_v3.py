@@ -107,7 +107,7 @@ def transform_to_vercel_url(extracted_url, api_base, course_id, subject_id, topi
         
     return vercel_url
 
-async def handle_course(session, api_base, bi, si, sn, topic, hdr1, course_name=""):
+async def handle_course(session, api_base, bi, si, sn, topic, hdr1, course_name="", app_name="Home"):
     ti = topic.get("topicid")
     tn = topic.get("topic_name")
     
@@ -116,18 +116,18 @@ async def handle_course(session, api_base, bi, si, sn, topic, hdr1, course_name=
     video_data = sorted(r3.get("data", []), key=lambda x: x.get("id"))  
 
     
-    tasks = [process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name) for video in video_data]
+    tasks = [process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name, app_name) for video in video_data]
     results = await asyncio.gather(*tasks)
     
     return [line for lines in results if lines for line in lines]
 
-async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name=""):
+async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1, course_name="", app_name="Home"):
     vi = video.get("id")
     vn = video.get("Title")
     lines = []
     
     # Construct breadcrumb string if course_name is provided
-    breadcrumb = f"[Home >> {course_name} >> {sn} >> {tn}] " if course_name else ""
+    breadcrumb = f"[{app_name} >> {course_name} >> {sn} >> {tn}] " if course_name else ""
     
     try:
         r4 = await fetch(session, f"{api_base}/get/fetchVideoDetailsById?course_id={bi}&video_id={vi}&ytflag=0&folder_wise_course=0", hdr1)
@@ -479,7 +479,7 @@ async def appex_v3_txt(app, message, api, name):
                             r2 = await fetch(session, f"{api_base}/get/alltopicfrmlivecourseclass?courseid={raw_text2}&subjectid={si}&start=-1", hdr1)
                             topics = sorted(r2.get("data", []), key=lambda x: x.get("topicid"))
 
-                            tasks = [handle_course(session, api_base, raw_text2, si, sn, t, hdr1, txtn) for t in topics]
+                            tasks = [handle_course(session, api_base, raw_text2, si, sn, t, hdr1, txtn, app_name) for t in topics]
                             all_data = await asyncio.gather(*tasks)
                 
                             for data in all_data:
