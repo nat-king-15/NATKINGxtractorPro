@@ -75,21 +75,29 @@ async def fetch_appx_html_to_json(session, url, headers=None, data=None):
         print(f"An error occurred during fetch_appx_html_to_json: {e}")
         return None
 
-def transform_to_vercel_url_v2(extracted_url, api_base, course_id, folder_path_ids, token):
-    match = re.search(r'/(\d+)-\d+/', extracted_url)
-    file_id = match.group(1) if match else extracted_url.split('/')[-1]
-    
+from urllib.parse import urlparse, parse_qs
+
+def transform_to_vercel_url_v2(extracted_url, api_base, course_id, folder_path_ids, item_id):
+    parsed = urlparse(extracted_url)
     api_domain = urlparse(api_base).netloc
     ext = "pdf" if ".pdf" in extracted_url.lower() else "m3u8"
     
     if str(folder_path_ids) and str(folder_path_ids) != "-1" and str(folder_path_ids) != "":
-        vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{folder_path_ids}.{file_id}.{ext}?usertoken={token}&appxv=3"
+        vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{folder_path_ids}.{item_id}.{ext}"
     else:
-        vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{file_id}.{ext}?usertoken={token}&appxv=3"
+        vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{item_id}.{ext}"
     
-    if ext == "pdf":
-        vercel_url += "&pdf=1"
-        
+    if parsed.query:
+        vercel_url += "?" + parsed.query
+        if "appxv=3" not in parsed.query:
+            vercel_url += "&appxv=3"
+        if ext == "pdf" and "pdf=1" not in parsed.query:
+            vercel_url += "&pdf=1"
+    else:
+        vercel_url += "?appxv=3"
+        if ext == "pdf":
+            vercel_url += "&pdf=1"
+
     return vercel_url
 
 async def fetch_item_details(session, api_base, course_id, folder_path_ids, item, headers, token, current_path="Home"):
@@ -110,7 +118,7 @@ async def fetch_item_details(session, api_base, course_id, folder_path_ids, item
             if vl:
                 dvl = decrypt(vl)
                 if ".pdf" not in dvl:
-                    v_url = transform_to_vercel_url_v2(dvl, api_base, course_id, folder_path_ids, token)
+                    v_url = transform_to_vercel_url_v2(dvl, api_base, course_id, folder_path_ids, fi)
                     outputs.append(f"{current_path} {vt} : {v_url}")
             else:
                 encrypted_links = data.get("encrypted_links", [])
@@ -122,12 +130,12 @@ async def fetch_item_details(session, api_base, course_id, folder_path_ids, item
                         k1 = decrypt(k)
                         k2 = decode_base64(k1)
                         da = decrypt(a)
-                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_path_ids, token)
+                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_path_ids, fi)
                         outputs.append(f"{current_path} {vt} : {v_url}*{k2}")
                         break
                     elif a:
                         da = decrypt(a)
-                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_path_ids, token)
+                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_path_ids, fi)
                         outputs.append(f"{current_path} {vt} : {v_url}")
                         break
 
@@ -141,7 +149,7 @@ async def fetch_item_details(session, api_base, course_id, folder_path_ids, item
                     if p1 and pk1:
                         dp1 = decrypt(p1)
                         depk1 = decrypt(pk1)
-                        v_url = transform_to_vercel_url_v2(dp1, api_base, course_id, folder_path_ids, token)
+                        v_url = transform_to_vercel_url_v2(dp1, api_base, course_id, folder_path_ids, fi)
                         if depk1 == "abcdefg":
                             outputs.append(f"{current_path} {vt} : {v_url}")
                         else:
@@ -152,7 +160,7 @@ async def fetch_item_details(session, api_base, course_id, folder_path_ids, item
                     if p2 and pk2:
                         dp2 = decrypt(p2)
                         depk2 = decrypt(pk2)
-                        v_url = transform_to_vercel_url_v2(dp2, api_base, course_id, folder_path_ids, token)
+                        v_url = transform_to_vercel_url_v2(dp2, api_base, course_id, folder_path_ids, fi)
                         if depk2 == "abcdefg":
                             outputs.append(f"{current_path} {vt} : {v_url}")
                         else:
