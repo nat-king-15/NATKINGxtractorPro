@@ -12,6 +12,8 @@ from config import CHANNEL_ID
 import os
 import base64
 import time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 log_channel = CHANNEL_ID
 def decrypt(enc):
@@ -73,7 +75,22 @@ async def fetch_appx_html_to_json(session, url, headers=None, data=None):
         print(f"An error occurred during fetch_appx_html_to_json: {e}")
         return None
 
-async def fetch_item_details(session, api_base, course_id, item, headers):
+def transform_to_vercel_url_v2(extracted_url, api_base, course_id, folder_id, token):
+    match = re.search(r'/(\d+)-\d+/', extracted_url)
+    file_id = match.group(1) if match else extracted_url.split('/')[-1]
+    
+    api_domain = urlparse(api_base).netloc
+    ext = "pdf" if ".pdf" in extracted_url.lower() else "m3u8"
+    
+    # Format for v2 (folder-based): course_id.folder_id.item
+    vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{folder_id}.{file_id}.{ext}?usertoken={token}&appxv=3"
+    
+    if ext == "pdf":
+        vercel_url += "&pdf=1"
+        
+    return vercel_url
+
+async def fetch_item_details(session, api_base, course_id, folder_id, item, headers, token):
     fi = item.get("id")
     vt = item.get("Title", "")
     outputs = []  
@@ -90,7 +107,9 @@ async def fetch_item_details(session, api_base, course_id, item, headers):
 
             if vl:
                 dvl = decrypt(vl)
-                outputs.append(f"{vt}:{dvl}")
+                if ".pdf" not in dvl:
+                    v_url = transform_to_vercel_url_v2(dvl, api_base, course_id, folder_id, token)
+                    outputs.append(f"{vt}:{v_url}")
             else:
                 encrypted_links = data.get("encrypted_links", [])
                 for link in encrypted_links:
@@ -101,11 +120,13 @@ async def fetch_item_details(session, api_base, course_id, item, headers):
                         k1 = decrypt(k)
                         k2 = decode_base64(k1)
                         da = decrypt(a)
-                        outputs.append(f"{vt}:{da}*{k2}")
+                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_id, token)
+                        outputs.append(f"{vt}:{v_url}*{k2}")
                         break
                     elif a:
                         da = decrypt(a)
-                        outputs.append(f"{vt}:{da}")
+                        v_url = transform_to_vercel_url_v2(da, api_base, course_id, folder_id, token)
+                        outputs.append(f"{vt}:{v_url}")
                         break
 
             if "material_type" in data:
@@ -118,20 +139,22 @@ async def fetch_item_details(session, api_base, course_id, item, headers):
                     if p1 and pk1:
                         dp1 = decrypt(p1)
                         depk1 = decrypt(pk1)
+                        v_url = transform_to_vercel_url_v2(dp1, api_base, course_id, folder_id, token)
                         if depk1 == "abcdefg":
-                            outputs.append(f"{vt}:{dp1}")
+                            outputs.append(f"{vt}:{v_url}")
                         else:
-                            outputs.append(f"{vt}:{dp1}*{depk1}")
+                            outputs.append(f"{vt}:{v_url}*{depk1}")
                     
                         
                             
                     if p2 and pk2:
                         dp2 = decrypt(p2)
                         depk2 = decrypt(pk2)
+                        v_url = transform_to_vercel_url_v2(dp2, api_base, course_id, folder_id, token)
                         if depk2 == "abcdefg":
-                            outputs.append(f"{vt}:{dp2}")
+                            outputs.append(f"{vt}:{v_url}")
                         else:
-                            outputs.append(f"{vt}:{dp2}*{depk2}")
+                            outputs.append(f"{vt}:{v_url}*{depk2}")
         else:
             print(f"Error: Unexpected response for video ID {fi}")
             return []
@@ -143,7 +166,7 @@ async def fetch_item_details(session, api_base, course_id, item, headers):
     
                     
         
-async def fetch_folder_contents(session, api_base, course_id, folder_id, headers):
+async def fetch_folder_contents(session, api_base, course_id, folder_id, headers, token):
     outputs = []  
 
     try:
@@ -153,9 +176,9 @@ async def fetch_folder_contents(session, api_base, course_id, folder_id, headers
             if "data" in j:
                 for item in j["data"]:
                     mt = item.get("material_type")
-                    tasks.append(fetch_item_details(session, api_base, course_id, item, headers))
+                    tasks.append(fetch_item_details(session, api_base, course_id, folder_id, item, headers, token))
                     if mt == "FOLDER":
-                        tasks.append(fetch_folder_contents(session, api_base, course_id, item["id"], headers))
+                        tasks.append(fetch_folder_contents(session, api_base, course_id, item["id"], headers, token))
 
             if tasks:
                 results = await asyncio.gather(*tasks)
@@ -182,9 +205,9 @@ async def v2_new(app, message, token, userid, hdr1, app_name, raw_text2, api_bas
         tasks = []
         if "data" in j2:
             for item in j2["data"]:        
-                tasks.append(fetch_item_details(session, api_base, raw_text2, item, hdr1))
+                tasks.append(fetch_item_details(session, api_base, raw_text2, -1, item, hdr1, token))
                 if item["material_type"] == "FOLDER":
-                    tasks.append(fetch_folder_contents(session, api_base, raw_text2, item["id"], hdr1))
+                    tasks.append(fetch_folder_contents(session, api_base, raw_text2, item["id"], hdr1, token))
         if tasks:
             results = await asyncio.gather(*tasks)
             for res in results:

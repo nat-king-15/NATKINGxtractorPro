@@ -1,24 +1,22 @@
 import requests
 import threading 
-import json
 import cloudscraper
+from bs4 import BeautifulSoup as htmlparser
 from pyrogram import filters
 from Extractor import app
-import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from Extractor.modules.mix import v2_new
 import re
+from urllib.parse import urlparse
 import sys
 import time
 import json
-import asyncio
-import aiohttp
-import base64
 from Crypto.Cipher import AES
-from Extractor.modules.mix import v2_new
 from Crypto.Util.Padding import unpad
+import base64
 from base64 import b64decode
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
-import time 
 from config import CHANNEL_ID
 
 log_channel = CHANNEL_ID
@@ -92,6 +90,24 @@ async def fetch(session, url, headers):
         return {}
 
 
+def transform_to_vercel_url(extracted_url, api_base, course_id, subject_id, topic_id, token):
+    match = re.search(r'/(\d+)-\d+/', extracted_url)
+    file_id = match.group(1) if match else extracted_url.split('/')[-1]
+    
+    api_domain = urlparse(api_base).netloc
+    
+    # Extension heuristics
+    ext = "pdf" if ".pdf" in extracted_url.lower() else "m3u8"
+    
+    # Format: https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course}.{subject}.{topic}.{file}.{ext}?usertoken={token}&appxv=3
+    # Note: v4 skips concept id since it comes empty as well
+    vercel_url = f"https://appxsignurl.vercel.app/appx/{api_domain}/{course_id}/{course_id}.{subject_id}.{topic_id}.{file_id}.{ext}?usertoken={token}&appxv=3"
+    
+    if ext == "pdf":
+        vercel_url += "&pdf=1"
+        
+    return vercel_url
+
 async def handle_course(session, api_base, bi, si, sn, topic, hdr1):
     ti = topic.get("topicid")
     tn = topic.get("topic_name")
@@ -122,6 +138,8 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
         vl = r4.get("data", {}).get("download_link", "")
         fl = r4.get("data", {}).get("video_id", "")
         
+        token = hdr1.get("Authorization", "")
+        
         if fl:
             dfl = decrypt(fl)
             final_link = f"https://youtu.be/{dfl}"
@@ -130,7 +148,8 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
         if vl:
             dvl = decrypt(vl)
             if ".pdf" not in dvl: 
-                lines.append(f"{vt}:{dvl}\n")
+                v_url = transform_to_vercel_url(dvl, api_base, bi, si, ti, token)
+                lines.append(f"{vt}:{v_url}\n")
                  
         else:
             encrypted_links = r4.get("data", {}).get("encrypted_links", [])
@@ -142,10 +161,12 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                     da = decrypt(a)
                     k1 = decrypt(k)
                     k2 = decode_base64(k1)
-                    lines.append(f"{vt}:{da}*{k2}\n")
+                    v_url = transform_to_vercel_url(da, api_base, bi, si, ti, token)
+                    lines.append(f"{vt}:{v_url}*{k2}\n")
                 elif a:
                     da = decrypt(a)
-                    lines.append(f"{vt}:{da}\n")
+                    v_url = transform_to_vercel_url(da, api_base, bi, si, ti, token)
+                    lines.append(f"{vt}:{v_url}\n")
         
         if "material_type" in r4.get("data", {}):
             mt = r4["data"]["material_type"]
@@ -158,17 +179,19 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                 if p1 and pk1:
                     dp1 = decrypt(p1)
                     depk1 = decrypt(pk1)
+                    v_url = transform_to_vercel_url(dp1, api_base, bi, si, ti, token)
                     if depk1 == "abcdefg":
-                        lines.append(f"{vt}:{dp1}\n")
+                        lines.append(f"{vt}:{v_url}\n")
                     else:
-                        lines.append(f"{vt}:{dp1}*{depk1}\n")
+                        lines.append(f"{vt}:{v_url}*{depk1}\n")
                 if p2 and pk2:
                     dp2 = decrypt(p2)
                     depk2 = decrypt(pk2)
+                    v_url = transform_to_vercel_url(dp2, api_base, bi, si, ti, token)
                     if depk2 == "abcdefg":
-                        lines.append(f"{vt}:{dp2}\n")
+                        lines.append(f"{vt}:{v_url}\n")
                     else:
-                        lines.append(f"{vt}:{dp2}*{depk2}\n")
+                        lines.append(f"{vt}:{v_url}*{depk2}\n")
 
         
         if "material_type" in r4.get("data", {}):
@@ -182,17 +205,19 @@ async def process_video(session, api_base, bi, si, sn, ti, tn, video, hdr1):
                 if p1 and pk1:
                     dp1 = decrypt(p1)
                     depk1 = decrypt(pk1)
+                    v_url = transform_to_vercel_url(dp1, api_base, bi, si, ti, token)
                     if depk1 == "abcdefg":
-                        lines.append(f"{vt}:{dp1}\n")
+                        lines.append(f"{vt}:{v_url}\n")
                     else:
-                        lines.append(f"{vt}:{dp1}*{depk1}\n")
+                        lines.append(f"{vt}:{v_url}*{depk1}\n")
                 if p2 and pk2:
                     dp2 = decrypt(p2)
                     depk2 = decrypt(pk2)
+                    v_url = transform_to_vercel_url(dp2, api_base, bi, si, ti, token)
                     if depk2 == "abcdefg":
-                        lines.append(f"{vt}:{dp2}\n")
+                        lines.append(f"{vt}:{v_url}\n")
                     else:
-                        lines.append(f"{vt}:{dp2}*{depk2}\n")
+                        lines.append(f"{vt}:{v_url}*{depk2}\n")
                         
         return lines
     
